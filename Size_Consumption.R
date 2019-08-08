@@ -25,7 +25,7 @@ handling_func <- function(m_i, m_j){
 
 
 phyto_m <- (seq(from = 0.2, to = 50, length = 100))^3
-zp_m <- 100^3
+zp_m <- 150^3
 
 
 pref <- Pref_func(m_i  = phyto_m, m_j = zp_m)
