@@ -1,52 +1,74 @@
-R_opt <- 100 # optimal bodymass ratio of prey
+# number of prey species / size c;ass of prey 
+w <- 100
+  
+# Interference term
+C_0 <- 1
+phi <- 0.25 # scaling exponent
+
+# Handling time
+h_0 <- 1
+eta_pd <- -0.75
+eta_py <- 0.5
+E_h <- 0.65
+
+# Attack (Capture) rate
+a_0 <- 1
+alpha_pd <- 0.92
+alpha_py <- 0.66
+E_a <- mean(c(-0.46, -0.96)) # range from -0.46 to -0.96
+
+T_0 <- 293.15 #(K)
+k <- 8.617333262145 * (10^(-5))
+R_opt <- (1/0.07)^3
 gamma <- 2 # assymetrical hump-shaped curve
 
-b_0 <- 50 # attack rate constant
-beta_i <- rnorm(1, mean = 0.47, sd = 0.04) #scaling exponent of how attack rate scales on biomass of prey 
-beta_j <- rnorm(1, mean = 0.15, sd = 0.03) #scaling exponent of how attack rate scales on biomass of predator
+q <- 0
 
-h_0 <- 0.4
-eta_i <- rnorm(1, mean = -0.48, sd = 0.03) #scaling exponent of how handling time scales on biomass of prey 
-eta_j <- rnorm(1, mean = -0.66, sd = 0.02) #scaling exponent of how handling time scales on biomass of predator
+Interfer_func <- function(m_pd){
+  c <- C_0 * (m_pd^phi) * (m_pd^phi)
+  return(c)
+}
 
-Pref_func <- function(m_i, m_j){
-  p <- ( (m_i / m_j * R_opt) * exp(1 - (m_i / m_j * R_opt)) ) ^ gamma
+Handling_func <- function(m_pd, m_py, Temp){
+  h_0 * (m_pd^eta_pd) * (m_py^eta_py) * exp((E_h * (Temp - T_0)) / (k * Temp * T_0))
+}
+
+Pref_func <- function(m_pd, m_py){
+  p <- ( (m_pd / (m_py * R_opt)) * exp(1 - (m_pd / (m_py * R_opt))) ) ^ gamma
   return(p)
 }
 
-Attack_func <- function(m_i, m_j){
-  atta <- b_0 * (m_i^beta_i) * (m_j^beta_j) * pref
+Attack_func <- function(m_pd, m_py, Temp){
+  atta <- a_0 * (m_pd^alpha_pd) * (m_py^alpha_py) * pref * exp((E_h * (Temp - T_0)) / (k * Temp * T_0))
   return(atta)
 }
 
-handling_func <- function(m_i, m_j){
-  h_0 * (m_i^eta_i) * (m_j^eta_j)
-}
+
+phyto_m <- (seq(from = 0.2, to = 50, length = w))^3
+phyto_D <- 10^5 * phyto_m^(-3/4)
+#plot(x = log(phyto_m^(1/3)), y = log(phyto_D))
+zp_m <- (seq(from = 100, to = 150, length = 50))^3
+zp_D <- 1
 
 
-phyto_m <- (seq(from = 0.2, to = 50, length = 100))^3
-zp_m <- 150^3
-
-
-pref <- Pref_func(m_i  = phyto_m, m_j = zp_m)
-#plot(x = phyto_m^(1/3), y = pref)
-attack <- Attack_func(m_i  = phyto_m, m_j = zp_m)
 #plot(x = phyto_m^(1/3), y = attack)
-handle <- handling_func(m_i  = phyto_m, m_j = zp_m)
-#plot(x = phyto_m^(1/3), y = handle)
 
-q <- 0
-c <- rnorm(1, mean = 0.8, sd = 0.2)
-phyto_D <- 10^5 * phyto_m^(3/4)
-zp_D <- 5
-Consump <- c()
+Consump <- as.data.frame(matrix(0, length(zp_m), length(phyto_m)))
 
-for(i in 1:length(phyto_m)){
-  w <- 1 / length(phyto_m)
-  Consump <- c(Consump, 
-    (w * attack[i] * (phyto_D[i])^(1 + q) ) / 
-    (1 + c * zp_D + w * handle[i] * (sum(phyto_D[i]) - phyto_D[i])^(1+q) )
-  )
+for (i in 1:length(zp_m)){
+  
+  intf <- Interfer_func(m_pd = zp_m[i])
+  handle <- Handling_func(m_pd = zp_m[i], m_py = phyto_m, Temp = 25 + 273.15)
+  pref <- Pref_func(m_pd = zp_m[i], m_py = phyto_m)
+  attack <- Attack_func(m_pd = zp_m[i], m_py = phyto_m, Temp = 25 + 273.15)
+  
+  for (j in 1:length(phyto_m)){
+    Consump[i, j] <- w * attack[j] * (phyto_D[j])^(1 + q) / 
+                    ( 1 + intf * zp_D + w * handle[j] * (sum(phyto_D[j]) - phyto_D[j])^(1+q) )
+  }  
 }
 
-plot(x = phyto_m^(1/3), y = Consump)
+
+plot(x = phyto_m^(1/3), y = Consump[1,])
+plot(x = phyto_m^(1/3), y = colSums(Consump))
+
