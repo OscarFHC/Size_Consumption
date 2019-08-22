@@ -4,15 +4,11 @@ library(vegan)       # for nestedness (switch from using nestedtemp to nestednod
 
 # Calculate OF diet matrix
 Diet.OF = function(SP. = SP, basal. = basal.loc, A. = A, S. = S, HD. = HD){
-  D = matrix(0, nrow(SP.), nrow(SP.)); colnames(D) = rownames(SP.); rownames(D) = rownames(SP.) 
-  # the 0/1 matrix indicating diet (col eats row).
-  All.IR = matrix(0, nrow(SP.), nrow(SP.)) 
-  # col = focusing consumer (ID), row = intake rate of eating till that ith prey on the profitability ranking.
-  All.PreyOrder = c() 
-  # col = focusing consumer (ID), row = resource ID in the order of profitability ranking.
+  D = matrix(0, nrow(SP.), nrow(SP.)); colnames(D) = rownames(SP.); rownames(D) = rownames(SP.) # the 0/1 matrix indicating diet (col eats row).
+  All.IR = matrix(0, nrow(SP.), nrow(SP.)) # col = focusing consumer (ID), row = intake rate of eating till that ith prey on the profitability ranking.
+  All.PreyOrder = c() # col = focusing consumer (ID), row = resource ID in the order of profitability ranking.
   P. = S./HD.
-  IR = rep(NA, nrow(SP.)) 
-  # a vector that stores the intake rate that's given by the final output diet.
+  IR = rep(NA, nrow(SP.)) # a vector that stores the intake rate that's given by the final output diet.
   for(j in 1:ncol(D)){ # for each consumer species
     if(j %in% basal.) {
       All.IR[, j] = 0
