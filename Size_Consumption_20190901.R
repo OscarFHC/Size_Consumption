@@ -21,7 +21,9 @@ E_a <- mean(c(-0.46, -0.96)) # range from -0.46 to -0.96
 
 T_0 <- 293.15 #(K)
 k <- 8.617333262145 * (10^(-5))
-R_opt <- 100 # optimum size ratio from Hansen 1994
+R_opt <- 4103.13
+# optimum ESD ratio from Hansen 1994 is 18:1
+# mean(zp_list$Biomass) / (exp(-0.583 + 0.86 * log(4/3 * pi * ((mean(c(237,165,132,132,159,237,109,159))/18)/2)^3)) * 10^-6)
 gamma <- 2 # assymetrical hump-shaped curve
 
 q <- 0 # q = 0 as type II, q = 1 as type III
