@@ -48,20 +48,23 @@ Attack_func <- function(m_pd, m_py, Temp){
 }
 
 
-phyto_m <- read.table(file = "D:/Research/Size_Consumption/Phyto.csv", sep = ",", header = TRUE) %>%
+phyto_all <- read.table(file = "D:/Research/Size_Consumption/Phyto.csv", sep = ",", header = TRUE) %>%
   filter(state == "c0") %>%
-  gather(key = phyto_class, value = Den, -c("Cruise", "Station", "state")) %>%
+  gather(key = phyto_class, value = Den, -c("Cruise", "Station", "state", "rep")) %>%
   mutate(phyto_class = as.numeric(gsub("X", "", phyto_class))) %>%
   mutate(Biom_ind = ifelse(phyto_class < 20, exp(-0.583 + 0.86 * log(4/3 * pi * (phyto_class/2)^3)) * 10^-6, # biomass in "ug"
                       ifelse(phyto_class > 20 & phyto_class < 50, exp(-0.665 + 0.939 * log(4/3 * pi * (phyto_class/2)^3)) * 10^-6, 0)),
-         Biom_all = Den * Biom_ind)
-phyto_sum <- phyto_m %>%
-  arrange(Cruise, Station) %>%
-  group_by(Cruise, Station, phyto_class) %>%
-  summarize(Den = mean(Den),
-            Biom_ind = mean(Biom_ind),
-            Biom_all = mean(Biom_all)) %>%
-  mutate(ID = paste0(as.character(Cruise), "_", as.character(Station)))
+         Biom_all = Den * Biom_ind) %>%
+  mutate(ID = paste0(as.character(Cruise), "_", as.character(Station), "_", as.character(rep))) %>%
+  arrange(Cruise, Station, rep)
+  
+# phyto_sum <- phyto_m %>%
+#   arrange(Cruise, Station) %>%
+#   group_by(Cruise, Station, phyto_class) %>%
+#   summarize(Den = mean(Den),
+#             Biom_ind = mean(Biom_ind),
+#             Biom_all = mean(Biom_all)) %>%
+#   mutate(ID = paste0(as.character(Cruise), "_", as.character(Station), "_", as.character(rep)))
 
 taxa_name <- c("Calaniod", "Oithonid", "Corycaeid", "Oncaeid", "Harpacticoid", "CN", "ON", "HN", "other")
 zp_list <- as.data.frame(matrix(0, length(taxa_name), 3)) %>%
@@ -72,7 +75,7 @@ zp_list <- as.data.frame(matrix(0, length(taxa_name), 3)) %>%
          b = c(1.871, 1.997, 2.875, 2.875, 2.62, 1.871, 1.997, 2.62, 2.62)) %>%
   mutate(Biomass = 10^(a + log10(Length)*b)) # Biomass in "ug"
 
-zp_m <- read.table(file = "D:/Research/Size_Consumption/Zoopl.csv", sep = ",", header = TRUE) %>%
+zp_all <- read.table(file = "D:/Research/Size_Consumption/Zoopl.csv", sep = ",", header = TRUE) %>%
   gather(key = zp_taxa, value = Den, -c("Cruise", "Station", "rep")) %>%
   mutate(Biom_ind = ifelse(zp_taxa == "Calaniod", zp_list$Biomass[1], # biomass in "ug"
                       ifelse(zp_taxa == "Oithonid", zp_list$Biomass[2],
@@ -83,19 +86,24 @@ zp_m <- read.table(file = "D:/Research/Size_Consumption/Zoopl.csv", sep = ",", h
                                 ifelse(zp_taxa == "ON", zp_list$Biomass[7],
                                   ifelse(zp_taxa == "HN", zp_list$Biomass[8],
                                     ifelse(zp_taxa == "other", zp_list$Biomass[9], 0)))))))))) %>%
-  mutate(Biom_all = Den * Biom_ind)
-
-zp_sum <- zp_m %>%
-  arrange(Cruise, Station, rep) %>%
-  group_by(Cruise, Station, zp_taxa) %>%
-  summarize(Den = mean(Den),
-            Biom_ind = mean(Biom_ind),
-            Biom_all = mean(Biom_all)) %>%
-  mutate(ID = paste0(as.character(Cruise), "_", as.character(Station)))
+  mutate(Biom_all = Den * Biom_ind) %>%
+  mutate(ID = paste0(as.character(Cruise), "_", as.character(Station), "_", as.character(rep))) %>%
+  arrange(Cruise, Station, rep)
+  
+# to check if zp is in phyto
+phyto_sum <- phyto_all[which(phyto_all$ID %in% unique(zp_all$ID)),]
+zp_sum <- zp_all[which(zp_all$ID %in% unique(phyto_all$ID)),]
+# zp_sum <- zp_m %>%
+#   arrange(Cruise, Station, rep) %>%
+#   group_by(Cruise, Station, zp_taxa) %>%
+#   summarize(Den = mean(Den),
+#             Biom_ind = mean(Biom_ind),
+#             Biom_all = mean(Biom_all)) %>%
+#   mutate(ID = paste0(as.character(Cruise), "_", as.character(Station)))
 
 #plot(x = phyto_m^(1/3), y = attack)
 
-Consump <- as.data.frame(matrix(0, length(unique(phyto_sum$ID)), length(unique(phyto_sum$phyto_class))))
+Consump_pred_w <- as.data.frame(matrix(0, length(unique(phyto_sum$ID)), length(unique(phyto_sum$phyto_class))))
 
 for (k in 1:length(unique(phyto_sum$ID))){
   phyto <- phyto_sum[which(phyto_sum$ID == unique(phyto_sum$ID)[k]),]
@@ -108,19 +116,61 @@ for (k in 1:length(unique(phyto_sum$ID))){
     
     single_zp_consume <- c()
     for (j in 1:length(phyto$phyto_class)){
-      w <- length(phyto$phyto_class) 
+      w <- 1/length(phyto$phyto_class) 
       single_zp_consume <- c(single_zp_consume,
                              w * attack[j] * (phyto$Den[j])^(1 + q) / 
-                             ( 1 + intf * (zp$Den[i] - 1) + w * handle[j] * sum(attack * (phyto$Den)^(1 + q)) )
+                             ( 1 + intf * (zp$Den[i] - 1) + sum(w * handle * attack * (phyto$Den)^(1 + q)) )
                              )
     } 
-    Consump[k,] <- Consump[k,] + single_zp_consume
+    Consump_pred_w[k,] <- Consump_pred_w[k,] + single_zp_consume
   }
 }
 
+Consump_pred <- as.data.frame(Consump_pred_w) %>%
+  mutate(ID = unique(phyto_sum$ID)) %>%
+  gather(key = cl, value = IR_pred, -ID) %>%
+  mutate(phyto_class = ifelse(cl == "V1", 7.5,
+                         ifelse(cl == "V2", 12.5,
+                           ifelse(cl == "V3", 17.5,
+                             ifelse(cl == "V4", 22.5, 
+                               ifelse(cl == "V5", 27.5,
+                                 ifelse(cl == "V6", 32.5,
+                                   ifelse(cl == "V7", 37.5,
+                                     ifelse(cl == "V8", 42.5,
+                                       ifelse(cl == "V9", 47.5, 0)))))))))) %>%
+  select(-cl)
+#plot(x = phyto$phyto_class, y = Consump_pred[k,])
+
+#############################################################################
+##### Empirical consumption #################################################
+#############################################################################
+phyto_ctrl <- read.table(file = "D:/Research/Size_Consumption/Phyto.csv", sep = ",", header = TRUE) %>%
+  filter(state == "c24") %>%
+  gather(key = phyto_class, value = Den, -c("Cruise", "Station", "state", "rep")) %>%
+  mutate(phyto_class = as.numeric(gsub("X", "", phyto_class))) %>%
+  mutate(Biom_ind = ifelse(phyto_class < 20, exp(-0.583 + 0.86 * log(4/3 * pi * (phyto_class/2)^3)) * 10^-6, # biomass in "ug"
+                           ifelse(phyto_class > 20 & phyto_class < 50, exp(-0.665 + 0.939 * log(4/3 * pi * (phyto_class/2)^3)) * 10^-6, 0)),
+         Biom_all = Den * Biom_ind) %>%
+  mutate(ID = paste0(as.character(Cruise), "_", as.character(Station), "_", as.character(rep))) %>%
+  arrange(Cruise, Station, rep)
+
+phyto_trmt <- read.table(file = "D:/Research/Size_Consumption/Phyto.csv", sep = ",", header = TRUE) %>%
+  filter(state == "t24") %>%
+  gather(key = phyto_class, value = Den, -c("Cruise", "Station", "state", "rep")) %>%
+  mutate(phyto_class = as.numeric(gsub("X", "", phyto_class))) %>%
+  mutate(Biom_ind = ifelse(phyto_class < 20, exp(-0.583 + 0.86 * log(4/3 * pi * (phyto_class/2)^3)) * 10^-6, # biomass in "ug"
+                           ifelse(phyto_class > 20 & phyto_class < 50, exp(-0.665 + 0.939 * log(4/3 * pi * (phyto_class/2)^3)) * 10^-6, 0)),
+         Biom_all = Den * Biom_ind) %>%
+  mutate(ID = paste0(as.character(Cruise), "_", as.character(Station), "_", as.character(rep))) %>%
+  arrange(Cruise, Station, rep)
+
+Consumption <- phyto_all %>%
+  select(phyto_class, ID) %>%
+  mutate(IR_emp = log(phyto_ctrl$Biom_all/phyto_trmt$Biom_all)) %>%
+  inner_join(Consump_pred, by = c("ID" = "ID", "phyto_class" = "phyto_class"))
+
+  
 
 
-
-plot(x = phyto$phyto_class, y = Consump[k,])
 
 
