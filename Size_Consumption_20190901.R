@@ -1,8 +1,10 @@
 library(tidyverse)
 
-# number of prey species / size class of prey 
+se_func <- function(x){
+  perm_se <- sd(replicate(5000, mean(sample(x, size = length(x), replace = TRUE))))
+  perm_se
+}
 
-  
 # Interference term
 C_0 <- 1
 phi <- 0.25 # scaling exponent
@@ -21,7 +23,7 @@ E_a <- mean(c(-0.46, -0.96)) # range from -0.46 to -0.96
 
 T_0 <- 293.15 #(K)
 k <- 8.617333262145 * (10^(-5))
-R_opt <- 4103.13
+R_opt <- 4103.13 #1000
 # optimum ESD ratio from Hansen 1994 is 18:1
 # mean(zp_list$Biomass) / (exp(-0.583 + 0.86 * log(4/3 * pi * ((mean(c(237,165,132,132,159,237,109,159))/18)/2)^3)) * 10^-6)
 gamma <- 2 # assymetrical hump-shaped curve
@@ -118,13 +120,17 @@ for (k in 1:length(unique(phyto_sum$ID))){
     for (j in 1:length(phyto$phyto_class)){
       w <- 1/length(phyto$phyto_class) 
       single_zp_consume <- c(single_zp_consume,
-                             w * attack[j] * (phyto$Den[j])^(1 + q) / 
-                             ( 1 + intf * (zp$Den[i] - 1) + sum(w * handle * attack * (phyto$Den)^(1 + q)) )
+                             zp$Den[i] * (
+                               w * attack[j] * (phyto$Den[j])^(1 + q) / 
+                               ( 1 + intf * (zp$Den[i] - 1) + sum(w * handle * attack * (phyto$Den)^(1 + q)) )
+                             )
                              )
     } 
     Consump_pred_w[k,] <- Consump_pred_w[k,] + single_zp_consume
   }
 }
+
+#plot(x = phyto$phyto_class, y = Consump_pred_w[k,])
 
 Consump_pred <- as.data.frame(Consump_pred_w) %>%
   mutate(ID = unique(phyto_sum$ID)) %>%
@@ -139,7 +145,7 @@ Consump_pred <- as.data.frame(Consump_pred_w) %>%
                                      ifelse(cl == "V8", 42.5,
                                        ifelse(cl == "V9", 47.5, 0)))))))))) %>%
   select(-cl)
-#plot(x = phyto$phyto_class, y = Consump_pred[k,])
+
 
 #############################################################################
 ##### Empirical consumption #################################################
@@ -165,11 +171,38 @@ phyto_trmt <- read.table(file = "D:/Research/Size_Consumption/Phyto.csv", sep = 
   arrange(Cruise, Station, rep)
 
 Consumption <- phyto_all %>%
-  select(phyto_class, ID) %>%
+  select(phyto_class, Cruise, Station, ID) %>%
+  mutate(IR_C24 = log(phyto_ctrl$Biom_all)) %>% # from C24
+  mutate(IR_T24 = log(phyto_trmt$Biom_all)) %>% # from T24
   mutate(IR_emp = log(phyto_ctrl$Biom_all/phyto_trmt$Biom_all)) %>%
   inner_join(Consump_pred, by = c("ID" = "ID", "phyto_class" = "phyto_class"))
 
+Consumption_sum <- Consumption %>%
+  filter(IR_emp != Inf & IR_emp != -Inf) %>%
+  group_by(Cruise, Station, phyto_class) %>%
+  summarize(meanIR_C24 = mean(IR_C24),
+            meanIR_T24 = mean(IR_T24),
+            meanIR_emp = mean(IR_emp),
+            meanIR_pred = mean(IR_pred),
+            seIR_C24 = se_func(IR_C24),
+            seIR_T24 = se_func(IR_T24),
+            seIR_emp = se_func(IR_emp),
+            seIR_pred = se_func(IR_pred)
+            )
+
+Consumption_p <- Consumption_sum %>%
+  gather(key = IRtype, value = IR, -c(Cruise, Station, phyto_class, seIR_C24, seIR_T24, seIR_emp, seIR_pred)) %>%
+  gather(key = SEtype, value = SE, -c(Cruise, Station, phyto_class, IRtype, IR)) %>%
+  mutate(CrSt = paste0(as.character(Cruise), "_", as.character(Station))) %>%
+  ggplot(aes(x = phyto_class, y = IR, color = factor(IRtype, level = c("meanIR_pred", "meanIR_emp", "meanIR_C24", "meanIR_T24")))) +
+    geom_point() + 
+    scale_color_manual(values=c("#0072B2", "#D55E00", "#56B4E9", "#999999"), name = "") + 
+    facet_grid(Cruise ~ Station)
+Consumption_p
   
+Consumption %>%
+  ggplot(aes(x = phyto_class, y = IR_pred)) +
+           geom_point()
 
 
 
