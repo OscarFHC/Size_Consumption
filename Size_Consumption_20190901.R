@@ -77,6 +77,14 @@ zp_list <- as.data.frame(matrix(0, length(taxa_name), 3)) %>%
          b = c(1.871, 1.997, 2.875, 2.875, 2.62, 1.871, 1.997, 2.62, 2.62)) %>%
   mutate(Biomass = 10^(a + log10(Length)*b)) # Biomass in "ug"
 
+# zp_all.test <- read.table(file = "D:/Research/Size_Consumption/Zoopl.csv", sep = ",", header = TRUE) %>%
+#   gather(key = zp_taxa, value = Den, -c("Cruise", "Station", "rep")) %>%
+#   mutate(biomass = NA)
+# 
+# for (i in 1:nrow(zp_all.test)){
+#   zp_all.test[i, ]$biomass <- zp_list[zp_list$zp_taxa == zp_all.test$zp_taxa[i], ]$Biomass
+# }
+
 zp_all <- read.table(file = "D:/Research/Size_Consumption/Zoopl.csv", sep = ",", header = TRUE) %>%
   gather(key = zp_taxa, value = Den, -c("Cruise", "Station", "rep")) %>%
   mutate(Biom_ind = ifelse(zp_taxa == "Calaniod", zp_list$Biomass[1], # biomass in "ug"
@@ -95,13 +103,6 @@ zp_all <- read.table(file = "D:/Research/Size_Consumption/Zoopl.csv", sep = ",",
 # to check if zp is in phyto
 phyto_sum <- phyto_all[which(phyto_all$ID %in% unique(zp_all$ID)),]
 zp_sum <- zp_all[which(zp_all$ID %in% unique(phyto_all$ID)),]
-# zp_sum <- zp_m %>%
-#   arrange(Cruise, Station, rep) %>%
-#   group_by(Cruise, Station, zp_taxa) %>%
-#   summarize(Den = mean(Den),
-#             Biom_ind = mean(Biom_ind),
-#             Biom_all = mean(Biom_all)) %>%
-#   mutate(ID = paste0(as.character(Cruise), "_", as.character(Station)))
 
 #plot(x = phyto_m^(1/3), y = attack)
 
@@ -203,6 +204,261 @@ Consumption_p
 Consumption %>%
   ggplot(aes(x = phyto_class, y = IR_pred)) +
            geom_point()
+###################################################################################################
+##### ADBM model ##################################################################################
+###################################################################################################
+phyto_sum <- phyto_all[which(phyto_all$ID %in% unique(zp_all$ID)),]
+zp_sum <- zp_all[which(zp_all$ID %in% unique(phyto_all$ID)),]
+
+Get.EHL.RatioH <- function(M,
+                           e,
+                           h.a, h.b,
+                           a, ai, aj,
+                           n, ni,
+                           N){
+  
+  Mi = M
+  Mj = M
+  
+  get.h <- function(Mi, Mj, h.a, h.b)
+    ifelse((h.b-Mi/Mj)>0,
+           h.a/(h.b-Mi/Mj),
+           Inf)
+  
+  ## in matrix H resources are rows and consumers are columns
+  if(!h.b==0)
+    H <- outer(M, M, get.h, h.a, h.b)
+  if(h.b==0)
+    H = matrix(h.a, length(M),length(M))
+  
+  ## ENCOUNTER RATES: consumer - resource mass specific encounter rates
+  get.a <- function(Mi, Mj,
+                    a, ai, aj)
+    a * Mi^ai * Mj^aj
+  A <- outer(M, M, get.a,
+             a=a, ai=ai, aj=aj)
+  
+  if(length(N)>1) {
+    ##print(x)
+    L <- A * N
+  }
+  if(length(N)==1)
+    L <- A* n*Mi^ni
+  
+  
+  if(sum(order(M)==1:length(M))!=length(M))
+    stop("Body sizes not sorted")
+  
+  ## energy values
+  E <- e*M
+  
+  list(E=E, H=H, L=L)
+  
+}
+Get.EHL.powerH <- function(M,
+                           e,
+                           h, hi, hj,
+                           a, ai, aj,
+                           n, ni,
+                           N){
+  
+  Mi = M
+  Mj = M
+  
+  
+  ## HANDLING TIMES
+  get.h <- function(Mi, Mj, h, hi, hj)
+    h * Mi^hi * Mj^hj
+  ## in matrix H resources are rows and consumers are columns
+  H <- outer(M, M, get.h, h=h, hi=hi, hj=hj)
+  
+  ## ENCOUNTER RATES: consumer - resource mass specific encounter rates
+  get.a <- function(Mi, Mj,
+                    a, ai, aj)
+    a * Mi^ai * Mj^aj
+  A <- outer(M, M, get.a,
+             a=a, ai=ai, aj=aj)
+  
+  if(length(N)>1) {
+    ##print(x)
+    L <- A * N
+  }
+  if(length(N)==1)
+    L <- A* n*Mi^ni
+  
+  if(sum(order(M)==1:length(M))!=length(M))
+    stop("Body sizes not sorted")
+  
+  ## energy values
+  E <- e*M
+  
+  return = list(E=E, H=H, L=L)
+  
+}
+
+Get.EHL.ratioH.temperature <- function(M,
+                                       e, ei,
+                                       h.a, h.b, h.E,
+                                       a, ai, aj, a.E,
+                                       n, ni,
+                                       N,
+                                       temperature.C) {
+  
+  tempK <- 273.15 + temperature.C
+  kT <- (tempK-T0)/(k*tempK*T0)  ## used in the Arrhenius equation later
+  
+  E <- e*M#^ei
+  
+  #N <- n*M^ni
+  
+  H.f <- function(Mi, Mj, kT, h.a, h.b, h.E)
+    ifelse(h.a / (h.b - Mi/Mj) * exp(h.E*kT)>0,
+           h.a / (h.b - Mi/Mj) * exp(h.E*kT),
+           Inf)
+  H <- outer(M, M, H.f, kT,
+             h.a, h.b, h.E)
+  
+  A.f <- function(Mi, Mj, kT, a, ai, aj, a.E)
+    A <- a * Mi^ai * Mj^aj * exp(a.E*kT)
+  A <- outer(M, M, A.f, kT,
+             a, ai, aj, a.E)
+  
+  if(length(N)>1) {
+    ##print(x)
+    L <- A * N
+  }
+  if(length(N)==1)
+    L <- A* n*Mi^ni
+  
+  EHL <- list(E, H, L)
+  EHL
+}
+
+Get.web <- function(EHL, energy.intake = TRUE){
+  
+  ##E <- EHL[[1]]
+  ##H <- EHL[[2]]
+  ##L <- EHL[[3]]
+  S <- length(EHL[[1]])
+  
+  web <- matrix(0, S, S)
+  overall.energy <- numeric(S)
+  per.species.energy <- matrix(0, S, S)
+  
+  ## in matrix P, columns are cosumers and contain profit of that consumer
+  ## feeding on each prey (row)
+  P <- EHL[[1]]/EHL[[2]]
+  
+  ## split code depending on whether encounter rates are predator specific or not
+  if(is.matrix(EHL[[3]])){
+    for(j in 1:S){
+      
+      ## ordering of p required
+      p <- P[,j]
+      order.by.p <- order(p, decreasing=T)
+      p <- p[order.by.p]
+      Lj <- EHL[[3]][,j][order.by.p]
+      hj <- EHL[[2]][,j][order.by.p]
+      Ej <- EHL[[1]][order.by.p]
+      
+      cumulative.profit <- cumsum(Ej * Lj) / (1 + cumsum( Lj * hj))
+      ##cumulative.profit[length(E)] <- NA
+      
+      if(!all(p==0)){
+        web[,j] <- c(1, cumulative.profit[1:(length(EHL[[1]])-1)] < p[2:length(EHL[[1]])])[order(order.by.p)]
+        overall.energy[j] <- cumulative.profit[sum(web[,j])]
+      }
+      energies <- c(Ej * Lj)[1:sum(web[,j])] / (1 + cumsum( Lj * hj)[sum(web[,j])]) 
+      all.energies <- c(energies, rep(0, S-length(energies)))
+      
+      per.species.energy[,j] <- all.energies[order(order.by.p)]
+      
+    }
+  }
+  if(is.vector(EHL[[3]])){
+    for(j in 1:S){
+      
+      ## ordering of p required
+      p <- P[,j]
+      order.by.p <- order(p, decreasing=T)
+      p <- p[order.by.p]
+      Lj <- EHL[[3]][order.by.p]
+      hj <- EHL[[2]][,j][order.by.p]
+      Ej <- EHL[[1]][order.by.p]
+      
+      cumulative.profit <- cumsum(Ej * Lj) / (1 + cumsum( Lj * hj))
+      
+      dj <- max(which(cumulative.profit==max(cumulative.profit)))
+      web[,j] <- c(rep(1, dj), rep(0, S-dj))[order(order.by.p)]
+      
+      overall.energy[j] <- cumulative.profit[sum(web[,j])]    
+      
+      energies <- c(Ej * Lj)[1:sum(web[,j])] / (1 + cumsum( Lj * hj)[sum(web[,j])]) 
+      all.energies <- c(energies, rep(0, S-length(energies)))
+      
+      per.species.energy[,j] <- all.energies[order(order.by.p)]
+      
+    }
+  }
+  
+  ##web[,!these] <- 0
+  
+  if(energy.intake)
+    result <- list(web=web, overall.flux=overall.energy, per.species.flux=per.species.energy)
+  else
+    result <- web
+  result
+}
+
+
+
+for (i in 1:length(unique(phyto_sum$ID))){
+  phyto <- phyto_all[which(phyto_all$ID == unique(phyto_sum$ID)[i]), ]
+  zp <- zp_all[which(zp_all$ID == unique(zp_sum$ID)[i]), ]
+
+  e <- 1
+  h <- 1
+  h.a <- 10^-5
+  h.b <- 0.4
+  h.E <- 0.65 
+  a <- 1
+  ai <- 0.92
+  aj <- 0.66
+  a.E <- mean(c(-0.46, -0.96))
+  temperature.C <- 25
+  T0 <- 273.15
+  
+  N <- c(phyto$Den[order(phyto$Biom_ind)], zp[-nrow(zp),]$Biom_ind[order(zp[-nrow(zp),]$Biom_ind)])
+  M <- c(sort(phyto$Biom_ind), sort(zp[-nrow(zp),]$Biom_ind))
+  
+  EHL <- Get.EHL.ratioH.temperature(M = M,
+                                    e = e,
+                                    h.a = h.a,
+                                    h.b = h.b,
+                                    h.E = h.E,
+                                    a = a,
+                                    ai = ai,
+                                    aj = aj,
+                                    a.E = a.E,
+                                    temperature.C = temperature.C,
+                                    N = N)
+  
+  wb <- Get.web(EHL = EHL)
+  test1 <- rowSums(sweep(wb$per.species.flux, MARGIN = 2, N, FUN = "*"))
+}
+
+M <- c(seq(from = 1, to = 10, length = 10), seq(from = 10, to = 100, length = 10))
+e <- 1
+h.a <- 10^-5
+h.b <- 0.4
+a <- 4.9568 * 10^-8
+ai <- -0.01
+aj <- 0.58
+#n, ni,
+N <- M^(-3/4)
+###################################################################################################
+##### ADBM model ##################################################################################
+###################################################################################################
 
 
 
