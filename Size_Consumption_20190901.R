@@ -363,24 +363,27 @@ Consumption_sum <- Consumption %>%
   summarize(meanIR_C24 = mean(IR_C24),
             meanIR_T24 = mean(IR_T24),
             meanIR_emp = mean(IR_emp),
-            meanIR_pred = mean(IR_PPMR),
-            meanIR_pred = mean(IR_ADBM),
+            meanIR_PPMR = mean(IR_PPMR),
+            meanIR_ADBM = mean(IR_ADBM),
             seIR_C24 = se_func(IR_C24),
             seIR_T24 = se_func(IR_T24),
             seIR_emp = se_func(IR_emp),
-            seIR_pred = se_func(IR_PPMR),
-            seIR_pred = se_func(IR_ADBM)
+            seIR_PPMR = se_func(IR_PPMR),
+            seIR_ADBM = se_func(IR_ADBM)
   )
-# 
-# Consumption_p <- Consumption_sum %>%
-#   gather(key = IRtype, value = IR, -c(Cruise, Station, phyto_class, seIR_C24, seIR_T24, seIR_emp, seIR_pred)) %>%
-#   gather(key = SEtype, value = SE, -c(Cruise, Station, phyto_class, IRtype, IR)) %>%
-#   mutate(CrSt = paste0(as.character(Cruise), "_", as.character(Station))) %>%
-#   ggplot(aes(x = phyto_class, y = IR, color = factor(IRtype, level = c("meanIR_pred", "meanIR_emp", "meanIR_C24", "meanIR_T24")))) +
-#   geom_point() + 
-#   scale_color_manual(values=c("#0072B2", "#D55E00", "#56B4E9", "#999999"), name = "") + 
-#   facet_grid(Cruise ~ Station)
-# Consumption_p
+
+Consumption_p <- Consumption_sum %>%
+  gather(key = IRtype, value = IR, -c(Cruise, Station, phyto_class, seIR_C24, seIR_T24, seIR_emp, seIR_PPMR, seIR_ADBM)) %>%
+  gather(key = SEtype, value = SE, -c(Cruise, Station, phyto_class, IRtype, IR)) %>%
+  mutate(CrSt = paste0(as.character(Cruise), "_", as.character(Station))) %>%
+  ggplot(aes(x = phyto_class, y = IR, 
+             color = factor(IRtype, level = c("meanIR_emp", "meanIR_PPMR", "meanIR_ADBM", "meanIR_C24", "meanIR_T24")))) +
+  geom_point() +
+  geom_jitter(width = 0.1) +
+  geom_errorbar(aes(x = phyto_class, ymin = IR - SE, ymax = IR + SE), width = 0.2, size = 0.5) +
+  scale_color_manual(values=c("#0072B2", "#D55E00", "#56B4E9", "#999999", "#666666"), name = "") +
+  facet_grid(Cruise ~ Station)
+Consumption_p
 # 
 # Consumption %>%
 #   ggplot(aes(x = phyto_class, y = IR_pred)) +
