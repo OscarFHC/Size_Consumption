@@ -43,13 +43,14 @@ phyto_all <- read.table(file = "D:/Research/Size_Consumption/Phyto.csv", sep = "
                            ifelse(phyto_ESD > 20 & phyto_ESD < 50, exp(-0.665 + 0.939 * log(4/3 * pi * (phyto_ESD/2)^3)) * 10^-6, 0)),
          Biom_T0 = Biom_ind * c0,
          Biom_C24 = Biom_ind * c24,
-         Biom_T24 = Biom_ind * c24) %>%
+         Biom_T24 = Biom_ind * t24) %>%
   mutate(ID = paste0(as.character(Cruise), "_", as.character(Station), "_", as.character(rep))) %>%
   arrange(Cruise, Station, rep)
 
 # to check if zp is in phyto
 phyto <- phyto_all[which(phyto_all$ID %in% unique(zp_all$ID)),]
-zp <- zp_all[which(zp_all$ID %in% unique(phyto_all$ID)),]
+zp <- zp_all[which(zp_all$ID %in% unique(phyto_all$ID)),] %>%
+  filter(zp_taxa != "Total")
 
 Consumption <- phyto %>%
   #select(phyto_ESD, Cruise, Station, rep, ID) %>%
@@ -84,7 +85,7 @@ a_pd <- 0.92
 a_py <- 0.66
 E_a <- mean(c(-0.46, -0.96)) # range from -0.46 to -0.96
 
-T_0 <- 293.15 #(K)
+T_0 <- 273.15 #(K)
 k <- 8.617333262145 * (10^(-5))
 R_opt <- 4103.13 #1000
 # optimum ESD ratio from Hansen 1994 is 18:1
@@ -124,7 +125,8 @@ Consump_PPMR_w <- as.data.frame(matrix(0, length(unique(phyto$ID)), length(uniqu
 for (k in 1:length(unique(phyto$ID))){
   phyto_temp <- phyto[which(phyto$ID == unique(phyto$ID)[k]),]
   zp_temp <- zp[which(zp$ID == unique(phyto$ID)[k]),]
-  for (i in 1:(length(zp_temp$zp_taxa)-1)){ # "-1" because total zp is not used
+  
+  for (i in 1:length(zp_temp$zp_taxa)){ # "-1" because total zp is not used
     intf <- Interfer_func(m_pd = zp_temp$Biom_ind[i])
     handle <- Handling_func(m_pd = zp_temp$Biom_ind[i], m_py = phyto_temp$Biom_ind, Temp = 25 + 273.15)
     pref <- Pref_func(m_pd = zp_temp$Biom_ind[i], m_py = phyto_temp$Biom_ind)
@@ -222,8 +224,9 @@ Get.EHL.powerH.temperature <- function(M,
   
   #N <- n*M^ni
   
-  H.f <- function(Mi, Mj, kT, h_0, h_py, h_pd, h.E)
+  H.f <- function(Mi, Mj, kT, h_0, h_py, h_pd, h.E){
     H <- h_0 * Mi^h_py * Mj^h_pd * exp(h.E*kT)
+    }
   H <- outer(M, M, 
              H.f, kT, h_0, h_py, h_pd, h.E)
   
@@ -316,7 +319,7 @@ a_0 <- 1
 a_pd <- 0.92
 a_py <- 0.66
 a.E <- mean(c(-0.46, -0.96))
-k <- 8.6173 * 10^-5
+k <- 8.617333262145 * (10^(-5))
 temperature.C <- 25
 T0 <- 273.15
 
@@ -326,10 +329,11 @@ Consump_ADBM <- as.data.frame(c(phyto$Biom_ind, zp$Biom_ind)) %>%
   mutate(ID = c(phyto$ID, zp$ID),
          TrophicLevel = c(rep("phyto", length(phyto$ID)), rep("zp", length(zp$ID))),
          G_ADBM_ratioH = 0,
-         G_ADBM_pwrH = 0) %>%
+         G_ADBM_pwrH = 0,
+         phyto_ESD = c(phyto$phyto_ESD, zp$Biom_ind)) %>%
   rename(size = "c(phyto$Biom_ind, zp$Biom_ind)")
 
-for (i in 1:length(unique(phyto_sum$ID))){
+for (i in 1:length(unique(phyto$ID))){
   phyto_temp <- phyto[which(phyto$ID == unique(phyto$ID)[i]), ]
   zp_temp <- zp[which(zp$ID == unique(zp$ID)[i]), ]
   
@@ -352,43 +356,60 @@ for (i in 1:length(unique(phyto_sum$ID))){
   
   wb_ratio[[i]] <- Get.web(EHL = EHL_ratio)
   wb_pwr[[i]] <- Get.web(EHL = EHL_pwr)
-  Consump_ADBM$IR_ADBM[which(Consump_ADBM$ID == phyto$ID)] <- 
-    rowSums(sweep(wb[[i]]$per.species.consump, MARGIN = 2, N, FUN = "*"))
+  
+  Consump_ADBM$G_ADBM_ratioH[which(Consump_ADBM$ID == phyto$ID)] <- 
+    rowSums(wb_ratio[[i]]$per.species.consump)
+    #rowSums(sweep(wb_ratio[[i]]$per.species.consump, MARGIN = 2, N, FUN = "*"))
+  Consump_ADBM$G_ADBM_pwrH[which(Consump_ADBM$ID == phyto$ID)] <- 
+    rowSums(wb_pwr[[i]]$per.species.consump)
+    #rowSums(sweep(wb_pwr[[i]]$per.species.consump, MARGIN = 2, N, FUN = "*"))
 }
 
 #########################################################################################
 ##### ADBM model ########################################################################
 #########################################################################################
+zeros <- Consumption %>%
+  inner_join(Consump_PPMR, by = c("ID" = "ID", "phyto_ESD" = "phyto_ESD")) %>%
+  inner_join(Consump_ADBM[which(Consump_ADBM$TrophicLevel == "phyto"),], by = c("ID" = "ID", "phyto_ESD" = "phyto_ESD")) %>%
+  filter(c0==0 | c0==0 | t24==0)
+unique(zeros$ID)
 
 Consumption_sum <- Consumption %>%
-  inner_join(Consump_PPMR, by = c("ID" = "ID", "phyto_class" = "phyto_class")) %>%
-  inner_join(Consump_ADBM[which(Consump_ADBM$TrophicLevel == "phyto"),], by = c("ID" = "ID", "phyto_class" = "size")) %>%
-  filter(IR_emp != Inf & IR_emp != -Inf) %>%
-  group_by(Cruise, Station, phyto_class) %>%
-  summarize(meanIR_C24 = mean(IR_C24),
-            meanIR_T24 = mean(IR_T24),
-            meanIR_emp = mean(IR_emp),
-            meanIR_PPMR = mean(IR_PPMR),
-            meanIR_ADBM = mean(IR_ADBM),
-            seIR_C24 = se_func(IR_C24),
-            seIR_T24 = se_func(IR_T24),
-            seIR_emp = se_func(IR_emp),
-            seIR_PPMR = se_func(IR_PPMR),
-            seIR_ADBM = se_func(IR_ADBM)
+  inner_join(Consump_PPMR, by = c("ID" = "ID", "phyto_ESD" = "phyto_ESD")) %>%
+  inner_join(Consump_ADBM[which(Consump_ADBM$TrophicLevel == "phyto"),], by = c("ID" = "ID", "phyto_ESD" = "phyto_ESD")) %>%
+  filter(c0>0 & c0>0 & t24>0) %>%
+  filter(Gz != Inf & Gz != -Inf) %>%
+  group_by(Cruise, Station, phyto_ESD) %>%
+  summarize(meanGc = mean(Gc),
+            meanGt = mean(Gt),
+            meanGz = mean(Gz),
+            meanG_PPMR = mean(G_PPMR),
+            meanG_ADBM_ratioH = mean(G_ADBM_ratioH),
+            meanG_ADBM_pwrH = mean(G_ADBM_pwrH),
+            seGc = se_func(Gc),
+            seGt = se_func(Gt),
+            seGz = se_func(Gz),
+            seG_PPMR = se_func(G_PPMR),
+            seG_ADBM_ratioH = se_func(G_ADBM_ratioH),
+            seG_ADBM_pwrH = mean(G_ADBM_pwrH)
   )
 
 Consumption_p <- Consumption_sum %>%
-  gather(key = IRtype, value = IR, -c(Cruise, Station, phyto_class, seIR_C24, seIR_T24, seIR_emp, seIR_PPMR, seIR_ADBM)) %>%
-  gather(key = SEtype, value = SE, -c(Cruise, Station, phyto_class, IRtype, IR)) %>%
+  select(-c(meanGc, meanGt, seGc, seGt)) %>%
+  gather(key = Gtype, value = G, -c(Cruise, Station, phyto_ESD, seGz, seG_PPMR, seG_ADBM_ratioH, seG_ADBM_pwrH)) %>%
+  gather(key = SEtype, value = SE, -c(Cruise, Station, phyto_ESD, Gtype, G)) %>%
   mutate(CrSt = paste0(as.character(Cruise), "_", as.character(Station))) %>%
-  ggplot(aes(x = phyto_class, y = IR, 
-             color = factor(IRtype, level = c("meanIR_emp", "meanIR_PPMR", "meanIR_ADBM", "meanIR_C24", "meanIR_T24")))) +
+  ggplot(aes(x = phyto_ESD, y = G, 
+             color = factor(Gtype, level = c("meanGz", "meanG_PPMR", "meanG_ADBM_ratioH", "meanG_ADBM_pwrH", "meanGc", "meanGt")))) +
   geom_point() +
   geom_jitter(width = 0.5) +
-  geom_errorbar(aes(x = phyto_class, ymin = IR - SE, ymax = IR + SE), width = 0.2, size = 0.5) +
-  scale_color_manual(values=c("#0072B2", "#D55E00", "#56B4E9", "#999999", "#666666"), name = "") +
+  geom_errorbar(aes(x = phyto_ESD, ymin = G - SE, ymax = G + SE), width = 0.2, size = 0.5) +
+  scale_color_manual(values=c("#000033", "#0072B2", "#D55E00", "#56B4E9", "#999999", "#666666"), name = "") +
   facet_grid(Cruise ~ Station)
 Consumption_p
+
+
+
 # 
 # Consumption %>%
 #   ggplot(aes(x = phyto_class, y = IR_pred)) +
@@ -432,6 +453,10 @@ Consumption_p
 #   EHL <- list(E, H, L)
 #   EHL
 # }
-
+head(phyto_examine)
+zeros <- read.table(file = "D:/Research/Size_Consumption/Phyto_10.csv", sep = ",", header = TRUE) %>%
+  filter(X7.5 == 0 | X15 == 0 |	X25 == 0 | X35 == 0 |	X45 == 0) %>%
+  mutate(ID = paste0(Cruise, "_", Station, "_", rep))
+unique(zeros$ID)
 
 
