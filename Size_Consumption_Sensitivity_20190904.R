@@ -1,5 +1,6 @@
 library(tidyverse)
 
+
 #########################################################################################
 ##### Loading data and universally used functions #######################################
 #########################################################################################
@@ -69,33 +70,9 @@ Consumption <- phyto %>%
 #########################################################################################
 ##### setup functions and parameters for fixed optimal PPMR model########################
 #########################################################################################
-# Interference term
-C_0 <- 1
-phi <- 0.25 # scaling exponent
-
-# Handling time
-h_0 <- 1
-h_pd <- -0.75
-h_py <- 0.5
-E_h <- 0.65
-
-# Attack (Capture) rate
-a_0 <- 1
-a_pd <- 0.92
-a_py <- 0.66
-E_a <- mean(c(-0.46, -0.96)) # range from -0.46 to -0.96
-
-T_0 <- 273.15 #(K)
-k <- 8.617333262145 * (10^(-5))
-R_opt <- 4103.13 #1000
-# optimum ESD ratio from Hansen 1994 is 18:1
-# mean(zp_list$Biomass) / (exp(-0.583 + 0.86 * log(4/3 * pi * ((mean(c(237,165,132,132,159,237,109,159))/18)/2)^3)) * 10^-6)
-gamma <- 2 # assymetrical hump-shaped curve
-
-q <- 0 # q = 0 as type II, q = 1 as type III
 
 Interfer_func <- function(m_pd){
-  c <- C_0 * (m_pd^phi) * (m_pd^phi)
+  c <- c_0 * (m_pd^phi) * (m_pd^phi)
   return(c)
 }
 
@@ -113,51 +90,93 @@ Attack_func <- function(m_py, m_pd, Temp, R_opt, gamma){
 ##### setup functions and parameters for fixed optimal PPMR model########################
 #########################################################################################
 
+c_0_range <- seq(from = 0, to  = 1, by = 0.01)
+phi_0_range <- seq(from = 0, to  = 1, by = 0.01)
+a_py_range <- seq(from = -1.5, to  = 1.5, by = 0.01)
+a_pd_range <- seq(from = 0, to  = 3, by = 0.01)
+E_a_range <- seq(from = 0.2, to  = 0.7, by = 0.01)
+
+gamma_range <- seq(from = 0.5, to  = 2, by = 0.01)
+h_py_range <- seq(from = -0.5, to  = 2, by = 0.01)
+h_pd_range <- seq(from = -1.5, to  = 0.5, by = 0.01)
+E_h_range <- seq(from = -0.7, to  = -0.2, by = 0.01)
+
+R_opt_range <- seq(from = 0, to  = 1, by = 0.05)
 #########################################################################################
 ##### fixed optimal PPMR model ##########################################################
 #########################################################################################
-Consump_PPMR_w <- as.data.frame(matrix(0, length(unique(phyto$ID)), length(unique(phyto$phyto_ESD))))
-
-for (k in 1:length(unique(phyto$ID))){
-  phyto_temp <- phyto[which(phyto$ID == unique(phyto$ID)[k]),]
-  zp_temp <- zp[which(zp$ID == unique(phyto$ID)[k]),]
+diff_c0 <- c()
+for (i in 1:length(c_0_range)){
+  # Interference term
+  c_0 <- c_0_range[i]
+  phi <- 0.25 # scaling exponent
   
-  intf <- Interfer_func(m_pd = zp_temp$Biom_ind)
-  handle <- outer(phyto_temp$Biom_ind, zp_temp$Biom_ind, Handling_func, 
-                  Temp = 25 + 273.15)
-  attack <- outer(phyto_temp$Biom_ind, zp_temp$Biom_ind, Attack_func, 
-                  Temp = 25 + 273.15, R_opt <- R_opt, gamma <- gamma)
+  # Attack (Capture) rate
+  a_0 <- mean(c(-28.13, -27.68))
+  a_py <- mean(c(1/3, 2/3))
+  a_pd <- 1/4 + 2/3
+  E_a <-  0.65
+  R_opt <- 4103.13 #1000
+  # optimum ESD ratio from Hansen 1994 is 18:1
+  # mean(zp_list$Biomass) / (exp(-0.583 + 0.86 * log(4/3 * pi * ((mean(c(237,165,132,132,159,237,109,159))/18)/2)^3)) * 10^-6)
+  gamma <- 2 # assymetrical hump-shaped curve
   
-  w <- 1/length(phyto_temp$phyto_ESD) 
-  zp_consume <- 
-    t(zp_temp$Den * # need to transpose the matrix b/c default matrix times/divides by vector is by "row"
-    (t(w * attack * (phyto_temp$c0)^(1 + q)) /
-      ( 1 + intf * (zp_temp$Den - 1) + colSums(w * handle * attack * (phyto_temp$c0)^(1 + q)) ) 
-    ))
-  Consump_PPMR_w[k,] <- rowSums(zp_consume)
+  # Handling time
+  h_0 <- 0.5
+  h_pd <- -0.75
+  h_py <- 0.5
+  E_h <- mean(c(-0.46, -0.96))
+  
+  T_0 <- 273.15 #(K)
+  k <- 8.617333262145 * (10^(-5))
+  q <- 0 # q = 0 as type II, q = 1 as type III
+  
+  Consump_PPMR_w <- as.data.frame(matrix(0, length(unique(phyto$ID)), length(unique(phyto$phyto_ESD))))
+  
+  for (k in 1:length(unique(phyto$ID))){
+    phyto_temp <- phyto[which(phyto$ID == unique(phyto$ID)[k]),]
+    zp_temp <- zp[which(zp$ID == unique(phyto$ID)[k]),]
+    
+    intf <- Interfer_func(m_pd = zp_temp$Biom_ind)
+    handle <- outer(phyto_temp$Biom_ind, zp_temp$Biom_ind, Handling_func, 
+                    Temp = 25 + 273.15)
+    attack <- outer(phyto_temp$Biom_ind, zp_temp$Biom_ind, Attack_func, 
+                    Temp = 25 + 273.15, R_opt <- R_opt, gamma <- gamma)
+    
+    w <- 1/length(phyto_temp$phyto_ESD) 
+    zp_consume <- 
+      t(zp_temp$Den * # need to transpose the matrix b/c default matrix times/divides by vector is by "row"
+          (t(w * attack * (phyto_temp$c0)^(1 + q)) /
+             ( 1 + intf * (zp_temp$Den - 1) + colSums(w * handle * attack * (phyto_temp$c0)^(1 + q)) ) 
+          ))
+    Consump_PPMR_w[k,] <- rowSums(zp_consume)
+  }
+  
+  Consump_PPMR <- as.data.frame(Consump_PPMR_w) %>%
+    rename("7.5" = V1, "15" = V2, "25" = V3, "35" = V4, "45" = V5) %>%
+    mutate(ID = unique(phyto$ID)) %>%
+    gather(key = phyto_ESD, value = G_PPMR, -ID) %>%
+    mutate(phyto_ESD = as.numeric(phyto_ESD))
+  
+  PPMR_Diff <- Consumption %>%
+    inner_join(Consump_PPMR, by = c("ID" = "ID", "phyto_ESD" = "phyto_ESD")) %>%
+    filter(c0>0 & c0>0 & t24>0) %>%
+    filter(Gz != Inf & Gz != -Inf) %>%
+    mutate(diff_PPMR = (G_PPMR - Gz)^2)
+  
+  diff_c0 <- c(diff_c0, sum(PPMR_Diff$diff_PPMR))
 }
 
-#plot(x = phyto$phyto_class, y = Consump_pred_w[k,])
+c_0_range[which(diff_c0 == min(diff_c0))]
+plot(x = c_0_range[], y = diff_c0)
 
-Consump_PPMR <- as.data.frame(Consump_PPMR_w) %>%
-  rename("7.5" = V1, "15" = V2, "25" = V3, "35" = V4, "45" = V5) %>%
-  mutate(ID = unique(phyto$ID)) %>%
-  gather(key = phyto_ESD, value = G_PPMR, -ID) %>%
-  mutate(phyto_ESD = as.numeric(phyto_ESD))
-  
-  #   mutate(phyto_ESD = ifelse(cl == "V1", 7.5,
-  #                      ifelse(cl == "V2", 12.5,
-  #                        ifelse(cl == "V3", 17.5,
-  #                          ifelse(cl == "V4", 22.5, 
-  #                            ifelse(cl == "V5", 27.5,
-  #                              ifelse(cl == "V6", 32.5,
-  #                                ifelse(cl == "V7", 37.5,
-  #                                  ifelse(cl == "V8", 42.5,
-  #                                    ifelse(cl == "V9", 47.5, 0)))))))))) %>%
-  # select(-cl)
+
 #########################################################################################
 ##### fixed optimal PPMR model ##########################################################
 #########################################################################################
+
+
+
 
 #########################################################################################
 ##### setup functions and parameters for ADBM model######################################
@@ -358,10 +377,10 @@ for (i in 1:length(unique(phyto$ID))){
   
   Consump_ADBM$G_ADBM_ratioH[which(Consump_ADBM$ID == unique(phyto_temp$ID))] <- 
     rowSums(wb_ratio[[i]]$per.species.consump)
-    #rowSums(sweep(wb_ratio[[i]]$per.species.consump, MARGIN = 2, N, FUN = "*"))
+  #rowSums(sweep(wb_ratio[[i]]$per.species.consump, MARGIN = 2, N, FUN = "*"))
   Consump_ADBM$G_ADBM_pwrH[which(Consump_ADBM$ID == unique(phyto_temp$ID))] <- 
     rowSums(wb_pwr[[i]]$per.species.consump)
-    #rowSums(sweep(wb_pwr[[i]]$per.species.consump, MARGIN = 2, N, FUN = "*"))
+  #rowSums(sweep(wb_pwr[[i]]$per.species.consump, MARGIN = 2, N, FUN = "*"))
 }
 
 #########################################################################################
@@ -405,13 +424,13 @@ Consumption_p <- Consumption_sum %>%
   facet_grid(Cruise ~ Station) + 
   theme_bw() + 
   theme(panel.grid.minor = element_blank())
-  # theme(panel.border = element_blank(), 
-  #       panel.grid.major = element_blank(), 
-  #       panel.grid.minor = element_blank(), 
-  #       plot.margin = margin(t = 0.5, r = 1.0, b = 0.6, l = 1.0, "cm"),
-  #       axis.line = element_line(colour = "black"), 
-  #       axis.text = element_text(size = 20), 
-  #       axis.title.y = element_text(size = 20, margin = margin(t = 0, r = 22, b = 0, l = 0)))
+# theme(panel.border = element_blank(), 
+#       panel.grid.major = element_blank(), 
+#       panel.grid.minor = element_blank(), 
+#       plot.margin = margin(t = 0.5, r = 1.0, b = 0.6, l = 1.0, "cm"),
+#       axis.line = element_line(colour = "black"), 
+#       axis.text = element_text(size = 20), 
+#       axis.title.y = element_text(size = 20, margin = margin(t = 0, r = 22, b = 0, l = 0)))
 Consumption_p
 #########################################################################################
 ##### Plotting empirical measuremens vs theoretical predictions #########################
@@ -425,9 +444,8 @@ Consumption_Diff <- Consumption %>%
   mutate(diff_PPMR = (G_PPMR - Gz)^2,
          diff_ADBM_ratioH = (G_ADBM_ratioH - Gz)^2)
 
-SST <- sum((Consumption_Diff$Gz - mean(Consumption_Diff$Gz))^2)
-sum(Consumption_Diff$diff_PPMR)
-sum(Consumption_Diff$diff_ADBM_ratioH)
+
+
 
 # 
 # Consumption %>%
