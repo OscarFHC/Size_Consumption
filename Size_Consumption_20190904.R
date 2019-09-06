@@ -70,32 +70,31 @@ Consumption <- phyto %>%
 ##### setup functions and parameters for fixed optimal PPMR model########################
 #########################################################################################
 # Interference term
-C_0 <- 1
+c_0 <- 1
 phi <- 0.25 # scaling exponent
 
-# Handling time
-h_0 <- 1
-h_pd <- -0.75
-h_py <- 0.5
-E_h <- 0.65
-
 # Attack (Capture) rate
-a_0 <- 1
-a_pd <- 0.92
-a_py <- 0.66
-E_a <- mean(c(-0.46, -0.96)) # range from -0.46 to -0.96
-
-T_0 <- 273.15 #(K)
-k <- 8.617333262145 * (10^(-5))
+a_0 <- 1#mean(c(-28.13, -27.68))
+a_py <- mean(c(1/3, 2/3))
+a_pd <- 1/4 + 2/3
+E_a <-  0.65
 R_opt <- 4103.13 #1000
 # optimum ESD ratio from Hansen 1994 is 18:1
 # mean(zp_list$Biomass) / (exp(-0.583 + 0.86 * log(4/3 * pi * ((mean(c(237,165,132,132,159,237,109,159))/18)/2)^3)) * 10^-6)
 gamma <- 2 # assymetrical hump-shaped curve
 
+# Handling time
+h_0 <- 1
+h_pd <- -0.75
+h_py <- 0.5
+E_h <- -0.65
+
+T_0 <- 273.15 #(K)
+k <- 8.617333262145 * (10^(-5))
 q <- 0 # q = 0 as type II, q = 1 as type III
 
 Interfer_func <- function(m_pd){
-  c <- C_0 * (m_pd^phi) * (m_pd^phi)
+  c <- c_0 * (m_pd^phi) * (m_pd^phi)
   return(c)
 }
 
@@ -105,7 +104,7 @@ Handling_func <- function(m_py, m_pd, Temp){
 
 Attack_func <- function(m_py, m_pd, Temp, R_opt, gamma){
   pref <- ( (m_pd / (m_py * R_opt)) * exp(1 - (m_pd / (m_py * R_opt))) ) ^ gamma
-  atta <- a_0 * (m_pd^a_pd) * (m_py^a_py) * pref * exp((E_h * (Temp - T_0)) / (k * Temp * T_0))
+  atta <- a_0 * (m_pd^a_pd) * (m_py^a_py) * pref * exp((E_a * (Temp - T_0)) / (k * Temp * T_0))
   return(atta)
 }
 #plot(x = phyto_m^(1/3), y = attack)
@@ -158,6 +157,44 @@ Consump_PPMR <- as.data.frame(Consump_PPMR_w) %>%
 #########################################################################################
 ##### fixed optimal PPMR model ##########################################################
 #########################################################################################
+
+Consumption_sum <- Consumption %>%
+  inner_join(Consump_PPMR, by = c("ID" = "ID", "phyto_ESD" = "phyto_ESD")) %>%
+  filter(c0>0 & c0>0 & t24>0) %>%
+  filter(Gz != Inf & Gz != -Inf) %>%
+  group_by(Cruise, Station, phyto_ESD) %>%
+  summarize(meanGc = mean(Gc),
+            meanGt = mean(Gt),
+            meanGz = mean(Gz),
+            meanG_PPMR = mean(G_PPMR),
+            seGc = se_func(Gc),
+            seGt = se_func(Gt),
+            seGz = se_func(Gz),
+            seG_PPMR = se_func(G_PPMR)
+  )
+
+Consumption_p <- Consumption_sum %>%
+  select(-c(meanGc, seGc, meanGt, seGt)) %>%
+  gather(key = Gtype, value = G, -c(Cruise, Station, phyto_ESD, seGz, seG_PPMR)) %>%
+  gather(key = SEtype, value = SE, -c(Cruise, Station, phyto_ESD, Gtype, G)) %>%
+  mutate(CrSt = paste0(as.character(Cruise), "_", as.character(Station))) %>%
+  ggplot(aes(x = phyto_ESD, y = G, 
+             color = factor(Gtype, level = c("meanGz", "meanG_PPMR", "meanG_ADBM_ratioH", "meanG_ADBM_pwrH", "meanGc", "meanGt")))) +
+  geom_point() +
+  geom_jitter(width = 0.5) +
+  geom_errorbar(aes(x = phyto_ESD, ymin = G - SE, ymax = G + SE), width = 0.2, size = 0.5) +
+  scale_color_manual(values=c("#000033", "#0072B2", "#D55E00", "#56B4E9", "#999999", "#666666"), name = "") +
+  facet_grid(Cruise ~ Station) + 
+  theme_bw() + 
+  theme(panel.grid.minor = element_blank())
+# theme(panel.border = element_blank(), 
+#       panel.grid.major = element_blank(), 
+#       panel.grid.minor = element_blank(), 
+#       plot.margin = margin(t = 0.5, r = 1.0, b = 0.6, l = 1.0, "cm"),
+#       axis.line = element_line(colour = "black"), 
+#       axis.text = element_text(size = 20), 
+#       axis.title.y = element_text(size = 20, margin = margin(t = 0, r = 22, b = 0, l = 0)))
+Consumption_p
 
 #########################################################################################
 ##### setup functions and parameters for ADBM model######################################
@@ -305,11 +342,11 @@ h.b <- 0.4
 h_0 <- 1
 h_pd <- -0.75
 h_py <- 0.5
-h.E <- 0.65 
+h.E <- -0.65
 a_0 <- 1
-a_pd <- 0.92
-a_py <- 0.66
-a.E <- mean(c(-0.46, -0.96))
+a_py <- mean(c(1/3, 2/3))
+a_pd <- 1/4 + 2/3
+a.E <- 0.65
 k <- 8.617333262145 * (10^(-5))
 temperature.C <- 25
 T0 <- 273.15
@@ -392,16 +429,16 @@ Consumption_sum <- Consumption %>%
   )
 
 Consumption_p <- Consumption_sum %>%
-  select(-c(meanGc, seGc, meanGt, seGt, meanG_ADBM_pwrH, seG_ADBM_pwrH)) %>%
-  gather(key = Gtype, value = G, -c(Cruise, Station, phyto_ESD, seGz, seG_PPMR, seG_ADBM_ratioH)) %>%
+  select(-c(meanGc, seGc, meanGt, seGt, meanG_ADBM_ratioH, seG_ADBM_ratioH)) %>%
+  gather(key = Gtype, value = G, -c(Cruise, Station, phyto_ESD, seGz, seG_PPMR, seG_ADBM_pwrH)) %>%
   gather(key = SEtype, value = SE, -c(Cruise, Station, phyto_ESD, Gtype, G)) %>%
   mutate(CrSt = paste0(as.character(Cruise), "_", as.character(Station))) %>%
   ggplot(aes(x = phyto_ESD, y = G, 
-             color = factor(Gtype, level = c("meanGz", "meanG_PPMR", "meanG_ADBM_ratioH", "meanG_ADBM_pwrH", "meanGc", "meanGt")))) +
+             color = factor(Gtype, level = c("meanGz", "meanG_PPMR", "meanG_ADBM_pwrH", "meanG_ADBM_ratioH", "meanGc", "meanGt")))) +
   geom_point() +
   geom_jitter(width = 0.5) +
   geom_errorbar(aes(x = phyto_ESD, ymin = G - SE, ymax = G + SE), width = 0.2, size = 0.5) +
-  scale_color_manual(values=c("#000033", "#0072B2", "#D55E00", "#56B4E9", "#999999", "#666666"), name = "") +
+  scale_color_manual(values=c("#000033", "#56B4E9", "#D55E00", "#0072B2", "#999999", "#666666"), name = "") +
   facet_grid(Cruise ~ Station) + 
   theme_bw() + 
   theme(panel.grid.minor = element_blank())

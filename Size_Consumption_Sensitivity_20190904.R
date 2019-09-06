@@ -70,7 +70,6 @@ Consumption <- phyto %>%
 #########################################################################################
 ##### setup functions and parameters for fixed optimal PPMR model########################
 #########################################################################################
-
 Interfer_func <- function(m_pd){
   c <- c_0 * (m_pd^phi) * (m_pd^phi)
   return(c)
@@ -82,92 +81,160 @@ Handling_func <- function(m_py, m_pd, Temp){
 
 Attack_func <- function(m_py, m_pd, Temp, R_opt, gamma){
   pref <- ( (m_pd / (m_py * R_opt)) * exp(1 - (m_pd / (m_py * R_opt))) ) ^ gamma
-  atta <- a_0 * (m_pd^a_pd) * (m_py^a_py) * pref * exp((E_h * (Temp - T_0)) / (k * Temp * T_0))
+  atta <- a_0 * (m_pd^a_pd) * (m_py^a_py) * pref * exp((E_a * (Temp - T_0)) / (k * Temp * T_0))
   return(atta)
 }
 #plot(x = phyto_m^(1/3), y = attack)
 #########################################################################################
 ##### setup functions and parameters for fixed optimal PPMR model########################
 #########################################################################################
+taxa_name <- c("Calaniod", "Oithonid", "Corycaeid", "Oncaeid", "Harpacticoid", "CN", "ON", "HN", "other")
+zp_list <- as.data.frame(matrix(0, length(taxa_name), 3)) %>%
+  rename(zp_taxa = V1, Length = V2, Biomass = V3) %>%
+  mutate(zp_taxa = taxa_name,
+         Length = c(237, 165, 132, 132, 159, 237,	109, 159, 150), 
+         a = c(-4.309, -5.3245, -7.458, -7.458, -6.4, -4.309, -5.3245, -6.4, -6.4),
+         b = c(1.871, 1.997, 2.875, 2.875, 2.62, 1.871, 1.997, 2.62, 2.62)) %>%
+  mutate(Biomass = 10^(a + log10(Length)*b)) 
+R_opt_func <- function(R){
+  mean(zp_list$Biomass) / 
+    (exp(-0.583 + 0.86 * log(4/3 * pi * ((mean(c(237,165,132,132,159,237,109,159))/R)/2)^3)) * 10^-6)  
+}
 
-c_0_range <- seq(from = 0, to  = 1, by = 0.01)
-phi_0_range <- seq(from = 0, to  = 1, by = 0.01)
-a_py_range <- seq(from = -1.5, to  = 1.5, by = 0.01)
-a_pd_range <- seq(from = 0, to  = 3, by = 0.01)
-E_a_range <- seq(from = 0.2, to  = 0.7, by = 0.01)
+range <- data.frame(
+  c_0_range = seq(from = 0, to  = 1, length = 500),
+  phi_0_range = seq(from = -1, to  = 1, length = 500),
+  
+  a_0_range = seq(from = -50, to = 50, length = 500),
+  a_py_range = seq(from = -1.5, to  = 2, length = 500),
+  a_pd_range = seq(from = 0, to  = 3, length = 500),
+  E_a_range = seq(from = -10000, to  = 1, length = 500),
+  R_opt_range = apply(matrix(seq(from = 0.1, to  = 30, length = 500), 1, 500), 1, FUN = R_opt_func),
+  gamma_range = seq(from = 0.5, to  = 100, length = 500),
+  
+  h_0_range = seq(from = 0, to = 50000, length = 500),
+  h_py_range = seq(from = -1, to  = 1, length = 500),
+  h_pd_range = seq(from = -3, to  = 0, length = 500),
+  E_h_range = seq(from = -1, to  = 1, length = 500)
+)
 
-gamma_range <- seq(from = 0.5, to  = 2, by = 0.01)
-h_py_range <- seq(from = -0.5, to  = 2, by = 0.01)
-h_pd_range <- seq(from = -1.5, to  = 0.5, by = 0.01)
-E_h_range <- seq(from = -0.7, to  = -0.2, by = 0.01)
-
-R_opt_range <- seq(from = 0, to  = 1, by = 0.05)
+param_set <- list()
+for(i in 1:ncol(range)){
+  param_basic <- data.frame(
+    c_0 = rep(1, 500),
+    phi = rep(0.25, 500), # scaling exponent
+    # Attack (Capture) rate
+    a_0 = rep(1, 500),#mean(c(-28.13, -27.68))
+    a_py = rep(mean(c(1/3, 2/3)), 500),
+    a_pd = rep(1/4 + 2/3, 500),
+    E_a = rep(0.65, 500),
+    R_opt = rep(4103.13, 500), #1000
+    # optimum ESD ratio from Hansen 1994 is 18:1
+    # mean(zp_list$Biomass) / (exp(-0.583 + 0.86 * log(4/3 * pi * ((mean(c(237,165,132,132,159,237,109,159))/18)/2)^3)) * 10^-6)
+    gamma = rep(2, 500), # assymetrical hump-shaped curve
+    # Handling time
+    h_0 = rep(1, 500),
+    h_pd = rep(-0.75, 500),
+    h_py = rep(0.5, 500),
+    E_h = rep(-0.65, 500),
+    
+    T_0 = rep(273.15, 500), #(K)
+    k = rep(8.617333262145 * (10^(-5)), 500),
+    q = rep(0, 500) # q = 0 as type II, q = 1 as type III))
+  )
+  
+  param_basic[,i] <- range[,i]
+  param_set[[i]] <- param_basic
+}
+#param_set[[10]]
+#########################################################################################
+##### setup functions and parameters for fixed optimal PPMR model########################
+#########################################################################################
 #########################################################################################
 ##### fixed optimal PPMR model ##########################################################
 #########################################################################################
-diff_c0 <- c()
-for (i in 1:length(c_0_range)){
-  # Interference term
-  c_0 <- c_0_range[i]
-  phi <- 0.25 # scaling exponent
-  
-  # Attack (Capture) rate
-  a_0 <- mean(c(-28.13, -27.68))
-  a_py <- mean(c(1/3, 2/3))
-  a_pd <- 1/4 + 2/3
-  E_a <-  0.65
-  R_opt <- 4103.13 #1000
-  # optimum ESD ratio from Hansen 1994 is 18:1
-  # mean(zp_list$Biomass) / (exp(-0.583 + 0.86 * log(4/3 * pi * ((mean(c(237,165,132,132,159,237,109,159))/18)/2)^3)) * 10^-6)
-  gamma <- 2 # assymetrical hump-shaped curve
-  
-  # Handling time
-  h_0 <- 0.5
-  h_pd <- -0.75
-  h_py <- 0.5
-  E_h <- mean(c(-0.46, -0.96))
-  
-  T_0 <- 273.15 #(K)
-  k <- 8.617333262145 * (10^(-5))
-  q <- 0 # q = 0 as type II, q = 1 as type III
-  
-  Consump_PPMR_w <- as.data.frame(matrix(0, length(unique(phyto$ID)), length(unique(phyto$phyto_ESD))))
-  
-  for (k in 1:length(unique(phyto$ID))){
-    phyto_temp <- phyto[which(phyto$ID == unique(phyto$ID)[k]),]
-    zp_temp <- zp[which(zp$ID == unique(phyto$ID)[k]),]
+param_RSS <- as.data.frame(matrix(0, nrow(range), ncol(range)))
+colnames(param_RSS) <- substr(colnames(range), 1, nchar(colnames(range))-6) 
+for (i in 1:ncol(range)){
+  param <- param_set[[i]]
+  RSS <- c()
+  for (j in 1:nrow(param)){
+    # Interference term
+    c_0 <- param$c_0[j]
+    phi <- param$phi[j]
     
-    intf <- Interfer_func(m_pd = zp_temp$Biom_ind)
-    handle <- outer(phyto_temp$Biom_ind, zp_temp$Biom_ind, Handling_func, 
-                    Temp = 25 + 273.15)
-    attack <- outer(phyto_temp$Biom_ind, zp_temp$Biom_ind, Attack_func, 
-                    Temp = 25 + 273.15, R_opt <- R_opt, gamma <- gamma)
+    a_0 <- param$a_0[j]
+    a_py <- param$a_py[j]
+    a_pd <- param$a_pd[j]
+    E_a <-  param$E_a[j]
+    R_opt <- param$R_opt[j]
+    gamma <- param$gamma[j]
     
-    w <- 1/length(phyto_temp$phyto_ESD) 
-    zp_consume <- 
-      t(zp_temp$Den * # need to transpose the matrix b/c default matrix times/divides by vector is by "row"
-          (t(w * attack * (phyto_temp$c0)^(1 + q)) /
-             ( 1 + intf * (zp_temp$Den - 1) + colSums(w * handle * attack * (phyto_temp$c0)^(1 + q)) ) 
-          ))
-    Consump_PPMR_w[k,] <- rowSums(zp_consume)
+    h_0 <- param$h_0[j]
+    h_py <- param$h_py[j]
+    h_pd <- param$h_pd[j]
+    E_h <- param$E_h[j]
+    
+    T_0 <- param$T_0[j]
+    k <- param$k[j]
+    q <- param$q[j]
+    
+    Consump_PPMR_w <- as.data.frame(matrix(0, length(unique(phyto$ID)), length(unique(phyto$phyto_ESD))))
+    
+    for (k in 1:length(unique(phyto$ID))){
+      phyto_temp <- phyto[which(phyto$ID == unique(phyto$ID)[k]),]
+      zp_temp <- zp[which(zp$ID == unique(phyto$ID)[k]),]
+      
+      intf <- Interfer_func(m_pd = zp_temp$Biom_ind)
+      handle <- outer(phyto_temp$Biom_ind, zp_temp$Biom_ind, Handling_func, 
+                      Temp = 25 + 273.15)
+      attack <- outer(phyto_temp$Biom_ind, zp_temp$Biom_ind, Attack_func, 
+                      Temp = 25 + 273.15, R_opt <- R_opt, gamma <- gamma)
+      
+      w <- 1/length(phyto_temp$phyto_ESD) 
+      zp_consume <- 
+        t(zp_temp$Den * # need to transpose the matrix b/c default matrix times/divides by vector is by "row"
+            (t(w * attack * (phyto_temp$c0)^(1 + q)) /
+               ( 1 + intf * (zp_temp$Den - 1) + colSums(w * handle * attack * (phyto_temp$c0)^(1 + q)) ) 
+            ))
+      Consump_PPMR_w[k,] <- rowSums(zp_consume)
+    }
+    
+    PPMR_Diff <- as.data.frame(Consump_PPMR_w) %>%
+      rename("7.5" = V1, "15" = V2, "25" = V3, "35" = V4, "45" = V5) %>%
+      mutate(ID = unique(phyto$ID)) %>%
+      gather(key = phyto_ESD, value = G_PPMR, -ID) %>%
+      mutate(phyto_ESD = as.numeric(phyto_ESD)) %>%
+      inner_join(Consumption, by = c("ID" = "ID", "phyto_ESD" = "phyto_ESD")) %>%
+      filter(c0>0 & c0>0 & t24>0) %>%
+      filter(Gz != Inf & Gz != -Inf) %>%
+      mutate(diff = (G_PPMR - Gz)^2)
+
+      RSS <- c(RSS, sum(PPMR_Diff$diff))
   }
-  
-  Consump_PPMR <- as.data.frame(Consump_PPMR_w) %>%
-    rename("7.5" = V1, "15" = V2, "25" = V3, "35" = V4, "45" = V5) %>%
-    mutate(ID = unique(phyto$ID)) %>%
-    gather(key = phyto_ESD, value = G_PPMR, -ID) %>%
-    mutate(phyto_ESD = as.numeric(phyto_ESD))
-  
-  PPMR_Diff <- Consumption %>%
-    inner_join(Consump_PPMR, by = c("ID" = "ID", "phyto_ESD" = "phyto_ESD")) %>%
-    filter(c0>0 & c0>0 & t24>0) %>%
-    filter(Gz != Inf & Gz != -Inf) %>%
-    mutate(diff_PPMR = (G_PPMR - Gz)^2)
-  
-  diff_c0 <- c(diff_c0, sum(PPMR_Diff$diff_PPMR))
+  param_RSS[,i] <- RSS
 }
 
-c_0_range[which(diff_c0 == min(diff_c0))]
+write.table(param_RSS, file = "D:/Research/Size_Consumption/Sensitivity/Param_RSS.csv", 
+            sep = ",", col.names = TRUE, row.names = FALSE)
+
+str(param_RSS)
+
+range$c_0_range[which(param_RSS$c_0 == min(param_RSS$c_0))]
+range$phi_0_range[which(param_RSS$phi_0 == min(param_RSS$phi_0))]
+
+range$a_0_range[which(param_RSS$a_0 == min(param_RSS$a_0))]
+range$a_py_range[which(param_RSS$a_py == min(param_RSS$a_py))]
+range$a_pd_range[which(param_RSS$a_pd == min(param_RSS$a_pd))]
+range$E_a_range[which(param_RSS$E_a == min(param_RSS$E_a))]
+range$R_opt_range[which(param_RSS$R_opt == min(param_RSS$R_opt))]
+range$gamma_range[which(param_RSS$gamma == min(param_RSS$gamma))]
+
+range$h_0_range[which(param_RSS$h_0 == min(param_RSS$h_0))]
+range$h_py_range[which(param_RSS$E_h == min(param_RSS$E_h))]
+range$h_pd_range[which(param_RSS$E_h == min(param_RSS$E_h))]
+range$E_h_range[which(param_RSS$E_h == min(param_RSS$E_h))] 
+
 plot(x = c_0_range[], y = diff_c0)
 
 
