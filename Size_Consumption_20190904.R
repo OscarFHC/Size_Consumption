@@ -450,6 +450,8 @@ Consumption_p <- Consumption_sum %>%
   #       axis.text = element_text(size = 20), 
   #       axis.title.y = element_text(size = 20, margin = margin(t = 0, r = 22, b = 0, l = 0)))
 Consumption_p
+ggsave(filename="D:/Research/Size_Consumption/Figs/Grazing.jpeg", 
+       plot = Consumption_p, width = 36, height = 24, units = c("cm"), dpi = 600)
 #########################################################################################
 ##### Plotting empirical measuremens vs theoretical predictions #########################
 #########################################################################################
